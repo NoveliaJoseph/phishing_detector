@@ -4,73 +4,39 @@ from transformers import BertModel, BertTokenizer
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import AdamW
 from torch.nn import CrossEntropyLoss
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score
-import os
+from datasets import load_dataset
 
 # ---------------------------------------------------------
-# 1. Data Loading and Processing
+# 1. Data Loading and Processing (Hugging Face)
 # ---------------------------------------------------------
-def load_data(csv_path='dataset.csv'):
-    if os.path.exists(csv_path):
-        print(f"Loading data from {csv_path}...")
-        return pd.read_csv(csv_path)
+def prepare_huggingface_data(tokenizer, batch_size=8):
+    print("Downloading dataset from Hugging Face (SetFit/enron_spam)...")
+    # This dataset contains Enron emails labeled as spam/ham (phishing/legitimate)
+    dataset = load_dataset("SetFit/enron_spam")
     
-    print(f"{csv_path} not found. Generating dummy dataset...")
-    # 0 = Legitimate (Ham), 1 = Phishing
-    data = {
-        'email_text': [
-            "Hey John, are we still on for the meeting tomorrow at 10 AM?",
-            "URGENT: Your bank account will be suspended. Click here to verify your identity.",
-            "Please find attached the Q3 financial report for your review.",
-            "Congratulations! You have won a $1000 Walmart gift card. Claim it now before it expires!",
-            "Can you pick up some milk on your way home?",
-            "Action Required: Update your PayPal billing information immediately to avoid service interruption."
-        ] * 20,
-        'label': [0, 1, 0, 1, 0, 1] * 20
-    }
-    df = pd.DataFrame(data)
-    df.to_csv(csv_path, index=False)
-    return df
-
-# ---------------------------------------------------------
-# 2. Dataset and Tokenizer Setup
-# ---------------------------------------------------------
-class EmailDataset(Dataset):
-    def __init__(self, texts, labels, tokenizer, max_length=128):
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_length = max_length
-        
-    def __len__(self):
-        return len(self.texts)
-    
-    def __getitem__(self, item):
-        text = str(self.texts[item])
-        label = self.labels[item]
-        
-        encoding = self.tokenizer.encode_plus(
-            text,
-            add_special_tokens=True,
-            max_length=self.max_length,
-            return_token_type_ids=False,
-            padding='max_length',
-            truncation=True,
-            return_attention_mask=True,
-            return_tensors='pt',
+    def tokenize_function(examples):
+        return tokenizer(
+            examples["text"], 
+            padding="max_length", 
+            truncation=True, 
+            max_length=128
         )
         
-        return {
-            'input_ids': encoding['input_ids'].flatten(),
-            'attention_mask': encoding['attention_mask'].flatten(),
-            'targets': torch.tensor(label, dtype=torch.long)
-        }
+    print("Tokenizing dataset...")
+    tokenized_datasets = dataset.map(tokenize_function, batched=True)
+    
+    # We only need the tokenized tensors and the label
+    tokenized_datasets.set_format(type="torch", columns=["input_ids", "attention_mask", "label"])
+    
+    # Using 'train' and 'test' splits provided by the dataset
+    train_loader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=batch_size)
+    val_loader = DataLoader(tokenized_datasets["test"], batch_size=batch_size)
+    
+    return train_loader, val_loader
 
 # ---------------------------------------------------------
-# 3. Hybrid BERT-BiLSTM Model Architecture
+# 2. Hybrid BERT-BiLSTM Model Architecture
 # ---------------------------------------------------------
 class Hybrid_BERT_BiLSTM(nn.Module):
     def __init__(self, bert_model_name='bert-base-uncased', hidden_dim=128, num_classes=2, dropout=0.3):
@@ -120,7 +86,7 @@ def train_epoch(model, data_loader, loss_fn, optimizer, device):
     for batch in data_loader:
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
-        targets = batch['targets'].to(device)
+        targets = batch['label'].to(device)
         
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
         _, preds = torch.max(outputs, dim=1)
@@ -147,7 +113,7 @@ def evaluate(model, data_loader, loss_fn, device):
         for batch in data_loader:
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
-            targets = batch['targets'].to(device)
+            targets = batch['label'].to(device)
             
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
             _, preds = torch.max(outputs, dim=1)
@@ -174,17 +140,8 @@ def main():
 
     # 1. Prepare Data
     print("\nPreparing dataset...")
-    df = load_data()
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    
-    # Train/Val Split
-    df_train, df_val = train_test_split(df, test_size=0.2, random_state=42, stratify=df['label'])
-    
-    train_dataset = EmailDataset(df_train['email_text'].to_numpy(), df_train['label'].to_numpy(), tokenizer)
-    val_dataset = EmailDataset(df_val['email_text'].to_numpy(), df_val['label'].to_numpy(), tokenizer)
-    
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+    train_loader, val_loader = prepare_huggingface_data(tokenizer, batch_size=8)
     
     # 2. Initialize Model
     print("\nInitializing model...")

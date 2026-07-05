@@ -7,7 +7,7 @@ def get_word_attributions(text, model, tokenizer, device):
     model.eval()
     
     # Tokenize input
-    encoding = tokenizer.encode_plus(
+    encoding = tokenizer(
         text,
         add_special_tokens=True,
         max_length=128,

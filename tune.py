@@ -4,7 +4,6 @@ from torch.optim import AdamW
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer
-from sklearn.model_selection import train_test_split
 import main
 
 def objective(trial):
@@ -16,16 +15,8 @@ def objective(trial):
     hidden_dim = trial.suggest_categorical('hidden_dim', [64, 128, 256])
     
     # Prepare Data
-    df = main.load_data()
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    
-    df_train, df_val = train_test_split(df, test_size=0.2, random_state=42, stratify=df['label'])
-    
-    train_dataset = main.EmailDataset(df_train['email_text'].to_numpy(), df_train['label'].to_numpy(), tokenizer)
-    val_dataset = main.EmailDataset(df_val['email_text'].to_numpy(), df_val['label'].to_numpy(), tokenizer)
-    
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+    train_loader, val_loader = main.prepare_huggingface_data(tokenizer, batch_size=8)
     
     # Initialize Model
     model = main.Hybrid_BERT_BiLSTM(hidden_dim=hidden_dim, dropout=dropout).to(device)
