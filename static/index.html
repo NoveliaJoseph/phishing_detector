@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Detector XAI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-orbs">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <main class="container">
+        <header>
+            <h1>Phish<span class="highlight">Guard</span></h1>
+            <p>AI-Powered Phishing Detection with Explainability</p>
+        </header>
+
+        <section class="input-section glass-panel">
+            <form id="predict-form">
+                <label for="email-text">Analyze Message</label>
+                <textarea id="email-text" placeholder="Paste an email or message here to check if it's phishing..." required></textarea>
+                <button type="submit" id="submit-btn">
+                    <span>Analyze Content</span>
+                    <div class="spinner hidden" id="loading-spinner"></div>
+                </button>
+            </form>
+        </section>
+
+        <section id="result-section" class="result-section glass-panel hidden">
+            <div class="result-header">
+                <h2>Result: <span id="prediction-label">Unknown</span></h2>
+                <div class="confidence">Confidence: <span id="prediction-confidence">0%</span></div>
+            </div>
+            
+            <div class="explainability-box">
+                <h3>Why did the AI make this decision?</h3>
+                <p class="subtitle">Words highlighted in <strong class="text-red">red</strong> indicate phishing, while words in <strong class="text-green">green</strong> indicate legitimate content.</p>
+                <div id="highlighted-text" class="highlighted-text">
+                    <!-- Text will be injected here -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

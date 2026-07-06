@@ -6,3 +6,5 @@ scikit-learn
 captum
 optuna
 datasets
+fastapi
+uvicorn
