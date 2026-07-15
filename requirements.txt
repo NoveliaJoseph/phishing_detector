@@ -6,5 +6,7 @@ scikit-learn
 captum
 optuna
 datasets
+huggingface_hub
+tqdm
 fastapi
 uvicorn

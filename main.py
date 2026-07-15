@@ -1,39 +1,18 @@
+import argparse
 import torch
 import torch.nn as nn
 from transformers import BertModel, BertTokenizer
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.nn import CrossEntropyLoss
 from sklearn.metrics import precision_score, recall_score, f1_score
-from datasets import load_dataset
+import data_loader as dl
 
 # ---------------------------------------------------------
-# 1. Data Loading and Processing (Hugging Face)
+# 1. Data Loading — delegated to data_loader.py
 # ---------------------------------------------------------
-def prepare_huggingface_data(tokenizer, batch_size=8):
-    print("Downloading dataset from Hugging Face (SetFit/enron_spam)...")
-    # This dataset contains Enron emails labeled as spam/ham (phishing/legitimate)
-    dataset = load_dataset("SetFit/enron_spam")
-    
-    def tokenize_function(examples):
-        return tokenizer(
-            examples["text"], 
-            padding="max_length", 
-            truncation=True, 
-            max_length=128
-        )
-        
-    print("Tokenizing dataset...")
-    tokenized_datasets = dataset.map(tokenize_function, batched=True)
-    
-    # We only need the tokenized tensors and the label
-    tokenized_datasets.set_format(type="torch", columns=["input_ids", "attention_mask", "label"])
-    
-    # Using 'train' and 'test' splits provided by the dataset
-    train_loader = DataLoader(tokenized_datasets["train"], shuffle=True, batch_size=batch_size)
-    val_loader = DataLoader(tokenized_datasets["test"], batch_size=batch_size)
-    
-    return train_loader, val_loader
+# Use data_loader.get_dataloaders(tokenizer, batch_size, max_samples)
+# See data_loader.py for full documentation.
 
 # ---------------------------------------------------------
 # 2. Hybrid BERT-BiLSTM Model Architecture
@@ -134,38 +113,64 @@ def evaluate(model, data_loader, loss_fn, device):
     return avg_loss, acc, precision, recall, f1
 
 def main():
+    # ------------------------------------------------------------------
+    # CLI arguments for quick iteration without editing source code
+    # Examples:
+    #   python main.py                        (full dataset, 3 epochs)
+    #   python main.py --max_samples 500      (quick dev run)
+    #   python main.py --epochs 1 --batch 16
+    # ------------------------------------------------------------------
+    parser = argparse.ArgumentParser(description="Train Phishing Detector")
+    parser.add_argument("--max_samples", type=int, default=None,
+                        help="Limit samples per split (train/test). Useful for quick tests.")
+    parser.add_argument("--epochs", type=int, default=3,
+                        help="Number of training epochs (default: 3).")
+    parser.add_argument("--batch", type=int, default=8,
+                        help="Batch size (default: 8).")
+    parser.add_argument("--lr", type=float, default=2e-3,
+                        help="Learning rate (default: 2e-3).")
+    parser.add_argument("--output", type=str, default="model.pth",
+                        help="Path to save trained model weights (default: model.pth).")
+    args = parser.parse_args()
+
     print("Setting up device...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 1. Prepare Data
+    # 1. Prepare Data (via data_loader.py)
     print("\nPreparing dataset...")
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    train_loader, val_loader = prepare_huggingface_data(tokenizer, batch_size=8)
-    
+    train_loader, val_loader = dl.get_dataloaders(
+        tokenizer,
+        batch_size=args.batch,
+        max_samples=args.max_samples,
+    )
+
     # 2. Initialize Model
     print("\nInitializing model...")
     model = Hybrid_BERT_BiLSTM().to(device)
-    
+
     # 3. Setup Optimizer and Loss Function
-    optimizer = AdamW(model.parameters(), lr=2e-3) # Higher LR because BERT is frozen
+    # Higher LR is appropriate because BERT layers are frozen
+    optimizer = AdamW(model.parameters(), lr=args.lr)
     loss_fn = CrossEntropyLoss().to(device)
-    
+
     # 4. Train Model
-    epochs = 3
-    print("\nStarting training loop...")
-    for epoch in range(epochs):
-        print(f"Epoch {epoch+1}/{epochs}")
+    print(f"\nStarting training loop ({args.epochs} epoch(s))...")
+    for epoch in range(args.epochs):
+        print(f"Epoch {epoch+1}/{args.epochs}")
         train_loss, train_acc = train_epoch(model, train_loader, loss_fn, optimizer, device)
         val_loss, val_acc, val_p, val_r, val_f1 = evaluate(model, val_loader, loss_fn, device)
-        
+
         print(f"Train - Loss: {train_loss:.4f} | Acc: {train_acc:.4f}")
-        print(f"Val   - Loss: {val_loss:.4f} | Acc: {val_acc:.4f} | Precision: {val_p:.4f} | Recall: {val_r:.4f} | F1: {val_f1:.4f}")
-        
+        print(f"Val   - Loss: {val_loss:.4f} | Acc: {val_acc:.4f} "
+              f"| Precision: {val_p:.4f} | Recall: {val_r:.4f} | F1: {val_f1:.4f}")
+
     # 5. Save Model
-    print("\nSaving model to model.pth...")
-    torch.save(model.state_dict(), 'model.pth')
+    print(f"\nSaving model to {args.output}...")
+    torch.save(model.state_dict(), args.output)
     print("Training complete!")
+
 
 if __name__ == '__main__':
     main()
